@@ -1,6 +1,6 @@
 <?php
 
-if (!isset($_COOKIE['isSiteAdministrator']) || $_COOKIE['isSiteAdministrator'] != true) {
+if ($_COOKIE['isSiteAdministrator'] != true) {
     header('Location: /index.php');
     exit;
 }

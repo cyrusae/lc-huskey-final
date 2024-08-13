@@ -1,12 +1,12 @@
 <?php
 
 include '../components/authenticate.php';
+include '../components/loggly-logger.php';
 
-
-$hostname = 'backend-mysql-database';
-$username = 'user';
-$password = 'supersecretpw';
-$database = 'password_manager';
+$hostname = $_ENV["BUILD_TARGET"];
+$username = $_ENV["MYSQL_USER"];
+$password = $_ENV["MYSQL_PASSWORD"];
+$database = $_ENV["MYSQL_DATABASE"];
 
 $conn = new mysqli($hostname, $username, $password, $database);
 

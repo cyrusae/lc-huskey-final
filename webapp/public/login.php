@@ -1,4 +1,5 @@
 <?php
+include '../components/loggly-logger.php';
 
 session_start();
 

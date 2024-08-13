@@ -2,6 +2,7 @@
 
 include '../components/authenticate.php';
 include '../components/admin-authorization.php';
+include '../components/loggly-logger.php';
 
 $hostname = $_ENV["BUILD_TARGET"];
 $username = $_ENV["MYSQL_USER"];

@@ -1,5 +1,5 @@
 <?php
-
+include '../components/loggly-logger.php';
 // Replace with your database connection details
 $hostname = $_ENV["BUILD_TARGET"];
 $username = $_ENV["MYSQL_USER"];

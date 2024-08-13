@@ -1,4 +1,5 @@
 <?php
+include '../components/loggly-logger.php';
 
 // Expire the authentication cookie
 unset($_COOKIE['authenticated']); 

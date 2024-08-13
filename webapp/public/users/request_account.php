@@ -1,11 +1,13 @@
 <?php
 
-$servername = "backend-mysql-database";
-$username = "user";
-$password = "supersecretpw";
-$dbname = "password_manager";
+include '../components/loggly-logger.php';
 
-$conn = new mysqli($servername, $username, $password, $dbname);
+$hostname = $_ENV["BUILD_TARGET"];
+$username = $_ENV["MYSQL_USER"];
+$password = $_ENV["MYSQL_PASSWORD"];
+$database = $_ENV["MYSQL_DATABASE"];
+
+$conn = new mysqli($hostname, $username, $password, $database);
 
 unset($error_message);
 
