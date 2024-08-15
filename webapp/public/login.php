@@ -1,55 +1,74 @@
 <?php
-include '../components/loggly-logger.php';
 
 session_start();
+include './components/loggly-logger.php';
 
-$hostname = $_ENV["BUILD_TARGET"];
-$username = $_ENV["MYSQL_USER"];
-$password = $_ENV["MYSQL_PASSWORD"];
-$database = $_ENV["MYSQL_DATABASE"];
+$hostname = 'backend-mysql-database';
+$username = 'user';
+$password = 'supersecretpw';
+$database = 'password_manager';
 
+// Create a new mysqli instance and check the connection
 $conn = new mysqli($hostname, $username, $password, $database);
 
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-unset($error_message);
-
-if ($conn->connect_error) {
-    $errorMessage = "Connection failed: " . $conn->connect_error;    
-    die($errorMessage);
-}
-
 // Check if the form is submitted
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
+
     $username = $_POST['username'];
     $password = $_POST['password'];
 
-    $sql = "SELECT * FROM users WHERE username = '$username' AND password = '$password' AND approved = 1";
-    $result = $conn->query($sql);
+    // Implementing rate limiting for brute force protection
+    $maxAttempts = 2; // Maximum number of login attempts allowed
+    $lockoutDuration = 20;
 
-    if($result->num_rows > 0) {
-       
+    if (isset($_SESSION['login_attempts']) && $_SESSION['login_attempts'] >= $maxAttempts) {
+        $errorMessage = 'Too many login attempts. Please try again later.';
+        $logger->warning("Potential brute force attempt blocked for username: $username");
+        exit(); // Stop further execution
+    }
+
+    
+    $stmt = $conn->prepare("SELECT * FROM users WHERE username = ? AND password = ? AND approved = 1");
+    $stmt->bind_param('ss', $username, $password);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
         $userFromDB = $result->fetch_assoc();
 
-        //$_COOKIE['authenticated'] = $username;
-        setcookie('authenticated', $username, time() + 3600, '/');     
+        $_SESSION['authenticated'] = $username; 
 
-        if ($userFromDB['default_role_id'] == 1)
-        {        
-            setcookie('isSiteAdministrator', true, time() + 3600, '/');                
-        }else{
-            unset($_COOKIE['isSiteAdministrator']); 
-            setcookie('isSiteAdministrator', '', -1, '/'); 
+        if ($userFromDB['default_role_id'] == 1) {        
+            $_SESSION['isSiteAdministrator'] = 1;               
+        } else {
+            unset($_SESSION['isSiteAdministrator']); 
         }
+        $logger->info("Successful login for username: $username");
+
+        // Reset login attempts on successful login
+        if (isset($_SESSION['login_attempts'])) {
+            unset($_SESSION['login_attempts']);
+        }
+
         header("Location: index.php");
         exit();
     } else {
-        $error_message = 'Invalid username or password.';  
+        $errorMessage = 'Invalid username or password.';
+        $logger->warning("Login failed for username: $username");
+
+        // Count login attempts and store in session
+        if (isset($_SESSION['login_attempts'])) {
+            $_SESSION['login_attempts']++;
+        } else {
+            $_SESSION['login_attempts'] = 1;
+        }
     }
 
+    $stmt->close();
     $conn->close();
 }
 
@@ -67,9 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="container mt-5">
         <div class="col-md-6 offset-md-3">
             <h2 class="text-center">Login</h2>
-            <?php if (isset($error_message)) : ?>
+            <?php if (isset($errorMessage)) : ?>
                 <div class="alert alert-danger" role="alert">
-                    <?php echo $error_message; ?>
+                    <?php echo $errorMessage; ?>
                 </div>
             <?php endif; ?>
             <form action="login.php" method="post">
