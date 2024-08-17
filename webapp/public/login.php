@@ -22,16 +22,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'];
 
     // Implementing rate limiting for brute force protection
-    $maxAttempts = 2; // Maximum number of login attempts allowed
-    $lockoutDuration = 20;
+    $maxAttempts = 4; // Maximum number of login attempts allowed
+    $lockoutDuration = 10; // Lockout duration in seconds
 
     if (isset($_SESSION['login_attempts']) && $_SESSION['login_attempts'] >= $maxAttempts) {
-        $errorMessage = 'Too many login attempts. Please try again later.';
-        $logger->warning("Potential brute force attempt blocked for username: $username");
-        exit(); // Stop further execution
+        $lastAttemptTime = $_SESSION['last_attempt_time'] ?? 0;
+        $currentTime = time();
+
+        if ($currentTime - $lastAttemptTime < $lockoutDuration) {
+            $remainingTime = $lockoutDuration - ($currentTime - $lastAttemptTime);
+            $errorMessage = "Too many login attempts. Please try again after $remainingTime seconds.";
+            $logger->warning("Potential brute force attempt blocked for username: $username");
+            exit(); // Stop further execution
+        } else {
+            // Reset login attempts after lockout duration
+            unset($_SESSION['login_attempts']);
+            unset($_SESSION['last_attempt_time']);
+        }
     }
 
-    
     $stmt = $conn->prepare("SELECT * FROM users WHERE username = ? AND password = ? AND approved = 1");
     $stmt->bind_param('ss', $username, $password);
     $stmt->execute();
@@ -52,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Reset login attempts on successful login
         if (isset($_SESSION['login_attempts'])) {
             unset($_SESSION['login_attempts']);
+            unset($_SESSION['last_attempt_time']);
         }
 
         header("Location: index.php");
@@ -66,6 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $_SESSION['login_attempts'] = 1;
         }
+
+        // Store the timestamp of the last attempt
+        $_SESSION['last_attempt_time'] = time();
     }
 
     $stmt->close();
