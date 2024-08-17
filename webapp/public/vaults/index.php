@@ -1,12 +1,12 @@
 <?php
 
 include '../components/authenticate.php';
-include '../components/loggly-logger.php';
 
-$hostname = $_ENV["BUILD_TARGET"];
-$username = $_ENV["MYSQL_USER"];
-$password = $_ENV["MYSQL_PASSWORD"];
-$database = $_ENV["MYSQL_DATABASE"];
+
+$hostname = 'backend-mysql-database';
+$username = 'user';
+$password = 'supersecretpw';
+$database = 'password_manager';
 
 $conn = new mysqli($hostname, $username, $password, $database);
 
@@ -17,69 +17,86 @@ if ($conn->connect_error) {
 }
 
 // Add Vault
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset ($_POST['vaultName'])) {
-    $vaultName = $_POST['vaultName'];
-    $userId = 1; // Replace with the actual user ID
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['vaultName'])) {
+    $vaultName = trim($_POST['vaultName']); // Trim whitespace
 
-    $query = "INSERT INTO vaults (vault_name) VALUES ('$vaultName')";
-    $result = $conn->query($query);
-
-    if (!$result) {
-
-        die ('A fatal error occurred and has been logged.');
-        // die("Error adding vault: " . $conn->error);
+    // Validate and sanitize the vault name
+    if (empty($vaultName)) {
+        die('Vault name cannot be empty.');
     }
 
-    // Retrieve the ID of the inserted vault
-    $insertedVaultId = $conn->insert_id;
+    // Remove or encode disallowed characters
+    $vaultName = filter_var($vaultName, FILTER_SANITIZE_STRING);
 
-    // We need to fetch the user_id based off the username in order to complete the permission insert, we are going to default to Owner for the role so we can hardcode that without looking it up
+    // Check if the sanitized input is still valid
+    if (preg_match('/[<>\/{}[\]]/', $vaultName)) {
+        die('Vault name contains invalid characters.');
+    }    
 
-    $user = $_COOKIE['authenticated'];
-    $queryFetchUserId = "SELECT user_id FROM users WHERE username = '$user'";
-    $resultFetchUserId = $conn->query($queryFetchUserId);
+    $userId = 1; // Replace with the actual user ID
+
+    // Use prepared statements to prevent SQL injection
+    $stmt = $conn->prepare("INSERT INTO vaults (vault_name) VALUES (?)");
+    $stmt->bind_param("s", $vaultName);
+
+    if (!$stmt->execute()) {
+        die('A fatal error occurred and has been logged.');
+    }
+
+    $insertedVaultId = $stmt->insert_id;
+
+    $user = $_SESSION['authenticated'];
+    $stmt = $conn->prepare("SELECT user_id FROM users WHERE username = ?");
+    $stmt->bind_param("s", $user);
+    $stmt->execute();
+    $resultFetchUserId = $stmt->get_result();
 
     if ($resultFetchUserId && $resultFetchUserId->num_rows > 0) {
-        // Fetch user_id from the result set
         $row = $resultFetchUserId->fetch_assoc();
         $userId = $row['user_id'];
         $roleId = 1;
 
-        // If user_id is found, insert the permission
-        $queryInsertPermission = "INSERT INTO vault_permissions (user_id, vault_id, role_id) VALUES ($userId, $insertedVaultId, $roleId)";
-        $resultInsertPermission = $conn->query($queryInsertPermission);
+        $stmt = $conn->prepare("INSERT INTO vault_permissions (user_id, vault_id, role_id) VALUES (?, ?, ?)");
+        $stmt->bind_param("iii", $userId, $insertedVaultId, $roleId);
 
-        if (!$resultInsertPermission) {
-
-            //  die("Error adding permission, Query : " .  $queryInsertPermission . " Error Info : " . $conn->error);
-            die ('A fatal error occurred while adding permission.');
+        if (!$stmt->execute()) {
+            die('A fatal error occurred while adding permission.');
         }
     } else {
-        die ("User with username '$user' not found.");
+        die("User with username '$user' not found.");
     }
 
-    // Redirect to the current page after adding the vault
     header("Location: {$_SERVER['PHP_SELF']}");
     exit();
 }
+
 
 // Edit Vault
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset ($_POST['editVaultName']) && isset ($_POST['editVaultId'])) {
-    $editVaultName = $_POST['editVaultName'];
-    $editVaultId = $_POST['editVaultId'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editVaultName']) && isset($_POST['editVaultId'])) {
+    $editVaultName = trim($_POST['editVaultName']);
+    $editVaultId = intval($_POST['editVaultId']);
 
-    $query = "UPDATE vaults SET vault_name = '$editVaultName' WHERE vault_id = $editVaultId";
-    $result = $conn->query($query);
-
-    if (!$result) {
-        die ('A fatal error occurred and has been logged.');
-        // die("Error editing vault: " . $conn->error);
+    if (empty($editVaultName)) {
+        die('Vault name cannot be empty.');
     }
 
-    // Redirect to the current page after editing the vault
+    $editVaultName = filter_var($editVaultName, FILTER_SANITIZE_STRING);
+
+    if (preg_match('/[<>\/{}]/', $editVaultName)) {
+        die('Vault name contains invalid characters.');
+    }
+
+    $stmt = $conn->prepare("UPDATE vaults SET vault_name = ? WHERE vault_id = ?");
+    $stmt->bind_param("si", $editVaultName, $editVaultId);
+
+    if (!$stmt->execute()) {
+        die('A fatal error occurred and has been logged.');
+    }
+
     header("Location: {$_SERVER['PHP_SELF']}");
     exit();
 }
+
 
 // Delete Vault
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset ($_POST['deleteVaultId']) && !empty ($_POST['deleteVaultId'])) {
@@ -100,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset ($_POST['deleteVaultId']) && 
 }
 
 // Retrieve vaults from the database
-if ($_COOKIE['isSiteAdministrator'] == true) {
+if ($_SESSION['isSiteAdministrator'] == true) {
     $query = "SELECT vaults.vault_id, vaults.vault_name
                FROM vaults";
 } else {
@@ -108,7 +125,7 @@ if ($_COOKIE['isSiteAdministrator'] == true) {
     FROM vaults, vault_permissions, users
     WHERE vaults.vault_id = vault_permissions.vault_id
     AND vault_permissions.user_id = users.user_id
-    AND users.username = '" . $_COOKIE['authenticated'] . "'";
+    AND users.username = '" . $_SESSION['authenticated'] . "'";
 }
 
 $searchQuery = "";
